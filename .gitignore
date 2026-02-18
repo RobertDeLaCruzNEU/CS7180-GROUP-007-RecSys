@@ -1,2 +1,6 @@
 *test*
 *.pyc
+simple-algorithm.ipynbs
+*.csv
+*.CSV
+*.json
