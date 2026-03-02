@@ -32,7 +32,7 @@ class ClusteringLayer(nn.Module):
         Returns:
             Soft assignment tensor of shape (batch_size, n_clusters)"""
         # Calculate Student's t-distribution kernels
-        norm = torch.sum((x.unsqueeze(1) - self.centroids) ** 2, dim=2)
+        norm = torch.sum((X.unsqueeze(1) - self.centroids) ** 2, dim=2)
         q = 1.0 / (1.0 + norm / self.alpha)
         q = q.pow((self.alpha + 1.0) / 2.0)
         # Normalize to get probabilities
