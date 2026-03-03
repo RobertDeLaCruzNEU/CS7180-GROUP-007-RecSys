@@ -4,7 +4,6 @@ simple-algorithm.ipynbs
 log_random_4_22_to_5_08_1k.csv
 log_standard_4_08_to_4_21_1k.csv
 log_standard_4_22_to_5_08_1k.csv
-*.csv
 user_features_1k.csv
 video_features_basic_1k.csv
 video_features_statistic_1k.csv
