@@ -77,54 +77,82 @@ class DeepEmbeddingClustering(nn.Module, BaseEstimator, TransformerMixin):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+    def get_soft_assignments(self, X_tensor, chunk_size=100000):
+        """Processes large data in chunks to avoid memory errors."""
+        self.eval()
+        q_list = []
+        with torch.no_grad():
+            for i in range(0, X_tensor.size(0), chunk_size):
+                batch = X_tensor[i : i + chunk_size]
+                q_list.append(self.clustering_layer(batch))
+        return torch.cat(q_list)
+    
     def fit(self, X: np.ndarray, y: np.ndarray=None):
-        """
-        Fit the DEC model to the data.
-        Args:
-            X: Input features of shape (num_samples, embedding_dim)
-            y: Ignored (not used for DEC training)
-        Returns:
-            self
-        """
-        self._set_seed(self.seed)
-        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
-        embedding_dim = X_tensor.shape[1]
-
-        self.clustering_layer = ClusteringLayer(self.n_clusters, embedding_dim, self.alpha)
-        self.to(self.device)
-
-        kmeans = KMeans(n_clusters=self.n_clusters, n_init=10)
-        initial_z = X_tensor.cpu().numpy()
-        kmeans.fit(initial_z)
-        self.clustering_layer.centroids.data = torch.tensor(kmeans.cluster_centers_).to(self.device)
-
-        optimizer = optim.Adam(self.parameters(), lr=self.lr)
-        criterion = nn.KLDivLoss(reduction='batchmean')
-        loader = DataLoader(TensorDataset(X_tensor), batch_size=self.batch_size, shuffle=False)
-        
-        pbar = tqdm(total=self.epochs, desc="Training")
-        self.train()
-        for epoch in range(self.epochs):
-            with torch.no_grad():
-                q = self.clustering_layer(X_tensor)
-                p = self.target_distribution(q)
-
-            epoch_loss = 0.0
-            for i, [batch] in enumerate(loader):
-                batch_p = p[i * self.batch_size : (i+1) * self.batch_size]
-                optimizer.zero_grad()
-                q_batch = self.clustering_layer(batch)
-                loss = criterion(q_batch.log(), batch_p)
-                loss.backward()
-                optimizer.step()
-                epoch_loss += loss.item()
+            """
+            Fit the DEC model to the data.
+            """
+            self._set_seed(self.seed)
+            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
             
-            pbar.set_postfix(loss=f"{epoch_loss:.4f}", epoch=epoch + 1)
-            pbar.update(1)
-        
-        pbar.close()
-        self.fitted_ = True
-        return self
+            # 1. Initialize the ClusteringLayer here to avoid NoneType errors
+            embedding_dim = X_tensor.shape[1]
+            self.clustering_layer = ClusteringLayer(
+                n_clusters=self.n_clusters, 
+                embedding_dim=embedding_dim, 
+                alpha=self.alpha
+            ).to(self.device)
+
+            # 2. Initial cluster centers using KMeans
+            self.eval()
+            kmeans = KMeans(n_clusters=self.n_clusters, n_init=10)
+            initial_z = X_tensor.cpu().numpy()
+            kmeans.fit(initial_z)
+            
+            # Copy KMeans centers to the ClusteringLayer parameters
+            self.clustering_layer.centroids.data = torch.tensor(
+                kmeans.cluster_centers_, 
+                dtype=torch.float32
+            ).to(self.device)
+
+            # 3. Setup optimizer and loss
+            optimizer = optim.Adam(self.parameters(), lr=self.lr)
+            criterion = nn.KLDivLoss(reduction='batchmean')
+            
+            # Use a fixed-order loader to match p_all indices during training
+            loader = DataLoader(
+                TensorDataset(X_tensor), 
+                batch_size=self.batch_size, 
+                shuffle=False
+            )
+            
+            pbar = tqdm(total=self.epochs, desc="Training")
+            for epoch in range(self.epochs):
+                # 4. Update target distribution P for the whole dataset (Step 1 of DEC)
+                q_all = self.get_soft_assignments(X_tensor)
+                p_all = self.target_distribution(q_all)
+
+                # 5. Train on batches (Step 2 of DEC)
+                self.train()
+                epoch_loss = 0.0
+                for i, [batch] in enumerate(loader):
+                    # Slice the corresponding target distribution for this batch
+                    batch_p = p_all[i * self.batch_size : (i + 1) * self.batch_size]
+                    
+                    optimizer.zero_grad()
+                    q_batch = self.clustering_layer(batch)
+                    
+                    # KL Divergence loss: match soft assignments q to target distribution p
+                    loss = criterion(q_batch.log(), batch_p)
+                    loss.backward()
+                    optimizer.step()
+                    epoch_loss += loss.item()
+                
+                pbar.set_postfix(loss=f"{epoch_loss:.4f}", epoch=epoch + 1)
+                pbar.update(1)
+            
+            pbar.close()
+            self.fitted_ = True
+            return self
 
     def target_distribution(self, q: torch.Tensor) -> torch.Tensor:
         """
@@ -150,7 +178,7 @@ class DeepEmbeddingClustering(nn.Module, BaseEstimator, TransformerMixin):
             X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
             q = self.clustering_layer(X_tensor)
             return q.cpu().numpy()
-
+    
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict cluster assignments for input data.
@@ -159,5 +187,9 @@ class DeepEmbeddingClustering(nn.Module, BaseEstimator, TransformerMixin):
         Returns:
             Cluster labels of shape (num_samples,)
         """
-        q = self.transform(X)
-        return np.argmax(q, axis=1)
+        self.eval()
+        with torch.no_grad():
+            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+            # Use chunks for prediction too
+            q = self.get_soft_assignments(X_tensor)
+            return torch.argmax(q, dim=1).cpu().numpy()

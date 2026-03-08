@@ -44,12 +44,20 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
+        X = X.copy()
+
         # Calculate reference date for video age during fit
         self.max_upload_dt_ = pd.to_datetime(X['upload_dt'], unit='s', errors='coerce').max()
+        X['upload_dt'] = X.upload_dt.fillna(self.max_upload_dt_.timestamp())
         
-        X = X.copy()
-        
+        X['server_height'] = X['server_height'].fillna(X.server_height.mean())
+        X['server_width']  = X['server_width'].fillna(X.server_width.mean())
+
+        X['visible_status'] = X['visible_status'].fillna(X.visible_status.mode()[0])
+        X['music_type'] = X['music_type'].fillna(-1)
+
         # 1. Video duration range
+        X['video_duration'] = X['video_duration'].fillna(X.video_duration.mean())
         X['video_duration_range'] = pd.cut(
             X['video_duration'], 
             bins=[0, 3e4, 6e4, 1.2e5, 1.8e5, 2.4e5, 3e5, 3.6e5, 4.2e5, np.inf], 
@@ -67,9 +75,10 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
         # 3. Video age and range
         upload_dt = pd.to_datetime(X['upload_dt'], unit='s', errors='coerce')
         X['video_age'] = (self.max_upload_dt_ - upload_dt).dt.days
+        X['video_age_range'] = '0-7d'
         X['video_age_range'] = pd.cut(
             X['video_age'], 
-            bins=[0, 7, 14, 30, 60, 90, np.inf], 
+            bins=[-1, 7, 14, 30, 60, 90, np.inf], 
             labels=['0-7d', '7-14d', '14-30d', '30-60d', '60-90d', '90d+']
         )
 
@@ -93,6 +102,7 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
     
     def fit_transform(self, X, y = None, **fit_params):
         return super().fit_transform(X, y, **fit_params)
+
 
 # Configuration for the Pipeline
 CATEGORICALS = [
