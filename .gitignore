@@ -7,4 +7,5 @@ log_standard_4_22_to_5_08_1k.csv
 user_features_1k.csv
 video_features_basic_1k.csv
 video_features_statistic_1k.csv
+video_clusters.csv
 *.json
