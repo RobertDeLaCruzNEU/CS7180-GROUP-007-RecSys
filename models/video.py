@@ -38,6 +38,11 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
             "video_age_range": "The age range of this video.",
             "author_class": "The class of the author of this video.",
             "song_rank": "The rank of the background music of this video in the music library.",
+
+            "is_like": "User likes",
+            "is_hate": "User hated",
+            "long_view": "User long viewed",
+            "is_profile_enter": "User profile visited",
         }
 
     def fit(self, X, y=None):
@@ -60,7 +65,7 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
         X['video_duration'] = X['video_duration'].fillna(X.video_duration.mean())
         X['video_duration_range'] = pd.cut(
             X['video_duration'], 
-            bins=[0, 3e4, 6e4, 1.2e5, 1.8e5, 2.4e5, 3e5, 3.6e5, 4.2e5, np.inf], 
+            bins=[-np.inf, 3e4, 6e4, 1.2e5, 1.8e5, 2.4e5, 3e5, 3.6e5, 4.2e5, np.inf], 
             labels=['0-30s', '30-60s', '1-2m', '2-3m', '3-4m', '4-5m', '5-6m', '6-7m', '7m+']
         )
 
@@ -68,17 +73,18 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
         X['video_display_size'] = X['server_height'] * X['server_width']
         X['video_display_size_range'] = pd.cut(
             X['video_display_size'], 
-            bins=[0, 1.2e+07, 2.4e+07, 3.6e+07, np.inf], 
+            bins=[-np.inf, 1.2e+07, 2.4e+07, 3.6e+07, np.inf], 
             labels=['small', 'small-medium', 'medium-large', 'large']
         )
 
         # 3. Video age and range
         upload_dt = pd.to_datetime(X['upload_dt'], unit='s', errors='coerce')
         X['video_age'] = (self.max_upload_dt_ - upload_dt).dt.days
+        X['video_age'] = X['video_age'].fillna(X.video_age.mean()).astype(int)
         X['video_age_range'] = '0-7d'
         X['video_age_range'] = pd.cut(
             X['video_age'], 
-            bins=[-1, 7, 14, 30, 60, 90, np.inf], 
+            bins=[-np.inf, 7, 14, 30, 60, 90, np.inf], 
             labels=['0-7d', '7-14d', '14-30d', '30-60d', '60-90d', '90d+']
         )
 
@@ -102,33 +108,38 @@ class VideoFeatureEngineering(BaseEstimator, TransformerMixin):
     
     def fit_transform(self, X, y = None, **fit_params):
         return super().fit_transform(X, y, **fit_params)
+    
 
 
 # Configuration for the Pipeline
 CATEGORICALS = [
-  "Type of this video.",
-  "The upload type of this video.",
-  "The visible state of this video on the APP now.",
-  "Background music type of this video.",
-  "The duration range of this video.",
-  "The display area range of this video.",
-  "The age range of this video.",
-  "The class of the author of this video.",
-  "The rank of the background music of this video in the music library.",
-  "Video hashtag.",
+    "Type of this video.",
+    "The upload type of this video.",
+    "The visible state of this video on the APP now.",
+    "Background music type of this video.",
+    "The duration range of this video.",
+    "The display area range of this video.",
+    "The age range of this video.",
+    "The class of the author of this video.",
+    "The rank of the background music of this video in the music library.",
+    "Video hashtag.",
 ]
 
 NUMERICALS = [
-  "The time duration of this video (in millisecond).",
-  "The display area of this video.",
-  "The age of this video (in days).",
+    "The time duration of this video (in millisecond).",
+    "The display area of this video.",
+    "The age of this video (in days).",
+    "User likes",
+    "User hated",
+    "User long viewed",
+    "User profile visited",
 ]
 
 VideoFeaturePreprocessor = Pipeline(steps=[
     ('engineering', VideoFeatureEngineering()),
     ('preprocessor', ColumnTransformer(
         transformers=[
-            ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore'), CATEGORICALS),
+            ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore', dtype=np.float32), CATEGORICALS),
             ('num', 'passthrough', NUMERICALS)
         ]
     ))

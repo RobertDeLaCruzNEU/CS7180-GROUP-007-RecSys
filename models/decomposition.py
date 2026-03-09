@@ -33,6 +33,7 @@ class Autoencoder(nn.Module, BaseEstimator, TransformerMixin):
             seed: int = 42
         ):
             super().__init__()
+            # Crucial: Store these exactly as passed for sklearn compatibility
             self.encoder = encoder
             self.decoder = decoder
             self.seed = seed
@@ -40,16 +41,15 @@ class Autoencoder(nn.Module, BaseEstimator, TransformerMixin):
             self.lr = lr
             self.batch_size = batch_size
             self.min_delta = min_delta
-            self.device = torch.device(device)
+            self.device = device
 
-            if not self.encoder or not self.decoder:
-                raise ValueError("Please provide encoder and decoder layers.")
-
-            self.encoder_net = nn.Sequential(*self.encoder)
-            self.decoder_net = nn.Sequential(*self.decoder)
+            # Use different names for the actual PyTorch modules
+            self.encoder_net_ = nn.Sequential(*self.encoder)
+            self.decoder_net_ = nn.Sequential(*self.decoder)
+            self.device_ = torch.device(device)
             
             self.losses = []
-            self.to(self.device)
+            self.to(self.device_)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -59,8 +59,8 @@ class Autoencoder(nn.Module, BaseEstimator, TransformerMixin):
         Returns:
             Output tensor of shape (batch_size, output_dim)
         """
-        z = self.encoder_net(X)
-        return self.decoder_net(z)
+        z = self.encoder_net_(X)
+        return self.decoder_net_(z)
     
     def _set_seed(self, seed: int):
         torch.manual_seed(seed)
@@ -79,7 +79,7 @@ class Autoencoder(nn.Module, BaseEstimator, TransformerMixin):
             self
         """
         self._set_seed(self.seed)
-        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
+        X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device_)
         dataset = TensorDataset(X_tensor)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
@@ -128,6 +128,6 @@ class Autoencoder(nn.Module, BaseEstimator, TransformerMixin):
         """
         self.eval()
         with torch.no_grad():
-            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
-            z = self.encoder_net(X_tensor)
+            X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device_)
+            z = self.encoder_net_(X_tensor)
             return z.cpu().numpy()

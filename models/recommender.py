@@ -2,26 +2,32 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
+import numpy as np
 
 def ndcg(y: np.ndarray, y_pred: np.ndarray, k: int = 5):
     def dcg(relevances):
-        return np.sum([rel / np.log2(i + 2) for i, rel in enumerate(relevances)])
-    
+        relevances = np.asarray(relevances, dtype=float)
+        if relevances.size:
+            return np.sum(relevances / np.log2(np.arange(2, relevances.size + 2)))
+        return 0.0
+
     scores = []
     for actual, pred in zip(y, y_pred):
+        relevance_map = {item_id: len(actual) - i for i, item_id in enumerate(actual)}
+        
         top_k = pred[:k]
-        actual_set = set(actual) if isinstance(actual, (list, np.ndarray)) else {actual}
-        relevance_vector = [1 if p in actual_set else 0 for p in top_k]
+        
+        relevance_vector = [relevance_map.get(item_id, 0) for item_id in top_k]
         actual_dcg = dcg(relevance_vector)
         
-        ideal_relevance = [1] * min(len(actual_set), k)
-        ideal_dcg = dcg(ideal_relevance)
+        ideal_relevances = sorted(relevance_map.values(), reverse=True)[:k]
+        ideal_dcg = dcg(ideal_relevances)
         
         if ideal_dcg > 0:
             scores.append(actual_dcg / ideal_dcg)
         else:
             scores.append(0.0)
-
+            
     return np.mean(scores)
 
 
